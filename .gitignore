@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# GUI/App
+*.spec
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Project Specific
+output*/
+temp*/
+*.log
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
+!gui/assets/  # If you have assets you want to keep
+config.json  # Sensitive or local config? User might want to keep it, but usually ignored if it has local paths.

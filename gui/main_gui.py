@@ -9,10 +9,11 @@ from datetime import datetime
 # Import tool functions
 import sys
 import os
+import subprocess
 sys.path.append(r"D:\stamp_maker_banana")
 
 from stamp_splitter_v2 import process_splitter
-from background_remover import process_remover
+# from background_remover import process_remover  # Replacing with bg_remover_3
 from auto_trimmer import process_auto_trimmer
 from line_stamp_formatter import process_formatter
 
@@ -39,7 +40,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.TkdndVersion = TkinterDnD._require(self)
         
         self.title("StampHub (Banana Layout + bg_remover_3)")
-        self.geometry("700x850")
+        self.geometry("750x950")
         
         # Grid configuration
         self.grid_columnconfigure(0, weight=1)
@@ -102,33 +103,70 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.split_margin_entry.pack(side="left", padx=5)
         ctk.CTkLabel(self.split_opts, text="px").pack(side="left")
 
-        # Step 2: BG Remove
+        # Step 2: BG Remove (High Precision bg_remover_3 integration)
         self.check_bg_var = ctk.BooleanVar(value=False)
-        self.check_bg = ctk.CTkCheckBox(self.options_frame, text="2. 背景透過 (単体処理)", variable=self.check_bg_var, font=("Arial", 12, "bold"))
-        self.check_bg.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.check_bg = ctk.CTkCheckBox(self.options_frame, text="2. 背景透過 (高精度AI)", variable=self.check_bg_var, font=("Arial", 12, "bold"))
+        self.check_bg.grid(row=1, column=0, padx=10, pady=10, sticky="nw")
 
         self.bg_opts = ctk.CTkFrame(self.options_frame, fg_color="transparent")
-        self.bg_opts.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        self.bg_opts.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         
-        # Use grid for better layout control
-        ctk.CTkLabel(self.bg_opts, text="モード:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
-        self.mode_var = ctk.StringVar(value="flood")
-        self.mode_combo = ctk.CTkComboBox(self.bg_opts, values=["flood", "auto_color", "color"], variable=self.mode_var, width=100)
-        self.mode_combo.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        # --- Mode Selection ---
+        self.bg_mode_var = ctk.StringVar(value="AI Only")
+        ctk.CTkRadioButton(self.bg_opts, text="AIのみ抽出", variable=self.bg_mode_var, value="AI Only", command=self.update_bg_ui).grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        ctk.CTkRadioButton(self.bg_opts, text="ハイブリッド(文字維持)", variable=self.bg_mode_var, value="Hybrid", command=self.update_bg_ui).grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        # --- Common Settings ---
+        self.common_bg_frame = ctk.CTkFrame(self.bg_opts, fg_color="transparent")
+        self.common_bg_frame.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        
+        ctk.CTkLabel(self.common_bg_frame, text="フチ削り量:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        self.bg_erode_val_label = ctk.CTkLabel(self.common_bg_frame, text="10", width=30)
+        self.bg_erode_val_label.grid(row=0, column=2, padx=5, pady=2)
+        self.bg_erode_slider = ctk.CTkSlider(self.common_bg_frame, from_=0, to=30, number_of_steps=30, width=150, 
+                                            command=lambda v: self.bg_erode_val_label.configure(text=str(int(v))))
+        self.bg_erode_slider.set(10)
+        self.bg_erode_slider.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        self.bg_fill_holes_var = ctk.BooleanVar(value=True)
+        self.bg_fill_holes_check = ctk.CTkCheckBox(self.common_bg_frame, text="中抜け防止", variable=self.bg_fill_holes_var)
+        self.bg_fill_holes_check.grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        
+        self.bg_gpu_var = ctk.BooleanVar(value=False)
+        self.bg_gpu_check = ctk.CTkCheckBox(self.common_bg_frame, text="GPU加速", variable=self.bg_gpu_var)
+        self.bg_gpu_check.grid(row=1, column=1, padx=5, pady=2, sticky="w")
 
-        ctk.CTkLabel(self.bg_opts, text="許容値:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
-        self.tol_val_label = ctk.CTkLabel(self.bg_opts, text="30", width=30)
-        self.tol_val_label.grid(row=1, column=2, padx=5, pady=2)
-        self.tol_slider = ctk.CTkSlider(self.bg_opts, from_=0, to=100, number_of_steps=100, width=120, command=lambda v: self.tol_val_label.configure(text=str(int(v))))
-        self.tol_slider.set(30)
-        self.tol_slider.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+        # --- Hybrid Settings ---
+        self.hybrid_bg_frame = ctk.CTkFrame(self.bg_opts, fg_color=("gray85", "gray25"), corner_radius=5)
+        self.hybrid_bg_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        
+        ctk.CTkLabel(self.hybrid_bg_frame, text="背景色:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        self.bg_color_var = ctk.StringVar(value="auto")
+        self.bg_color_combo = ctk.CTkComboBox(self.hybrid_bg_frame, values=["auto", "white", "black", "green", "custom"], 
+                                             variable=self.bg_color_var, width=100, command=self.on_bg_color_change)
+        self.bg_color_combo.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        self.bg_custom_color_btn = ctk.CTkButton(self.hybrid_bg_frame, text="🎨", width=30, command=self.pick_bg_color)
+        self.bg_custom_color_btn.grid(row=0, column=2, padx=5, pady=2)
+        
+        ctk.CTkLabel(self.hybrid_bg_frame, text="文字フチ削り:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        self.bg_color_erode_label = ctk.CTkLabel(self.hybrid_bg_frame, text="2", width=30)
+        self.bg_color_erode_label.grid(row=1, column=2, padx=5, pady=2)
+        self.bg_color_erode_slider = ctk.CTkSlider(self.hybrid_bg_frame, from_=0, to=10, number_of_steps=10, width=150, 
+                                                  command=lambda v: self.bg_color_erode_label.configure(text=str(int(v))))
+        self.bg_color_erode_slider.set(2)
+        self.bg_color_erode_slider.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+        
+        ctk.CTkLabel(self.hybrid_bg_frame, text="色の許容値:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        self.bg_color_tol_label = ctk.CTkLabel(self.hybrid_bg_frame, text="15", width=30)
+        self.bg_color_tol_label.grid(row=2, column=2, padx=5, pady=2)
+        self.bg_color_tol_slider = ctk.CTkSlider(self.hybrid_bg_frame, from_=0, to=100, number_of_steps=100, width=150,
+                                                command=lambda v: self.bg_color_tol_label.configure(text=str(int(v))))
+        self.bg_color_tol_slider.set(15)
+        self.bg_color_tol_slider.grid(row=2, column=1, padx=5, pady=2, sticky="w")
 
-        ctk.CTkLabel(self.bg_opts, text="フチ除去:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
-        self.ero_val_label = ctk.CTkLabel(self.bg_opts, text="0", width=30)
-        self.ero_val_label.grid(row=2, column=2, padx=5, pady=2)
-        self.bg_ero_slider = ctk.CTkSlider(self.bg_opts, from_=0, to=10, number_of_steps=10, width=120, command=lambda v: self.ero_val_label.configure(text=str(int(v))))
-        self.bg_ero_slider.set(0)
-        self.bg_ero_slider.grid(row=2, column=1, padx=5, pady=2, sticky="w")
+        # 初期状態の更新
+        self.update_bg_ui()
 
         # Step 3: Trim
         self.check_trim_var = ctk.BooleanVar(value=False)
@@ -240,6 +278,24 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         # Redirect stdout
         sys.stdout = RedirectText(self.log_text)
 
+    def update_bg_ui(self):
+        """モードに応じてUIの表示/非表示を切り替える"""
+        if self.bg_mode_var.get() == "Hybrid":
+            self.hybrid_bg_frame.grid()
+        else:
+            self.hybrid_bg_frame.grid_remove()
+
+    def on_bg_color_change(self, value):
+        if value == "custom":
+            self.pick_bg_color()
+
+    def pick_bg_color(self):
+        from tkinter import colorchooser
+        color = colorchooser.askcolor(title="背景色を選択")
+        if color[1]: # hex
+            rgb = color[0] # (r, g, b)
+            self.bg_color_var.set(f"{int(rgb[0])},{int(rgb[1])},{int(rgb[2])}")
+
     def drop_input(self, event):
         path = event.data
         if path.startswith("{") and path.endswith("}"):
@@ -258,7 +314,8 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def set_workbench_output(self):
         """作業台フォルダ（相対パス）を一発で設定する"""
-        workbench_path = os.path.join("..", "sticker-porter", "00_WorkBench")
+        # StampHub/gui から見て、ドライブのルートにある sticker-porter を指定するため、2つさかのぼる
+        workbench_path = os.path.join("..", "..", "sticker-porter", "00_WorkBench")
         self.output_path_var.set(workbench_path)
 
     def select_image_for_maintab(self):
@@ -590,19 +647,65 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 )
                 current_input = output_split
 
-            # 2. BG Remove
+            # 2. BG Remove (External Tool: bg_remover_3)
             if self.check_bg_var.get():
                 output_bg = os.path.join(final_output_dir, "temp_bg")
                 if os.path.exists(output_bg): shutil.rmtree(output_bg)
                 
-                print("\n[Step 2] 背景を透過中...")
-                process_remover(
-                    current_input, 
-                    output_bg, 
-                    mode=self.mode_var.get(), 
-                    tolerance=int(self.tol_slider.get()),
-                    erosion=int(self.bg_ero_slider.get())
-                )
+                print("\n[Step 2] 背景を透過中 (bg_remover_3 を呼び出し)...")
+                
+                # Build command
+                bg_remover_py = r"D:\bg_remover_3\bg_remover.py"
+                bg_remover_venv_python = r"D:\bg_remover_3\.venv\Scripts\python.exe"
+                
+                cmd = [
+                    bg_remover_venv_python, bg_remover_py,
+                    "-i", current_input,
+                    "-o", output_bg,
+                    "--alpha-matting",  # Ensure border smoothing is ON
+                    "--erode-size", str(int(self.bg_erode_slider.get()))
+                ]
+                
+                if self.bg_mode_var.get() == "Hybrid":
+                    cmd.extend(["-c", self.bg_color_var.get()])
+                    cmd.extend(["--color-erode", str(int(self.bg_color_erode_slider.get()))])
+                    cmd.extend(["--color-tolerance", str(int(self.bg_color_tol_slider.get()))])
+                
+                if not self.bg_fill_holes_var.get():
+                    cmd.append("--no-fill-holes")
+                
+                if self.bg_gpu_var.get():
+                    cmd.append("--gpu")
+                
+                # Execute external tool (Live log redirection)
+                try:
+                    print(f"DEBUG: 実行コマンド: {' '.join(cmd)}")
+                    process = subprocess.Popen(
+                        cmd, 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.STDOUT, 
+                        text=True, 
+                        encoding="cp932",
+                        errors="replace",
+                        bufsize=1,
+                        universal_newlines=True
+                    )
+                    
+                    # Read stdout line by line and print to redirect to GUI
+                    if process.stdout:
+                        for line in iter(process.stdout.readline, ""):
+                            print(line, end="")
+                    
+                    process.wait()
+                    
+                    if process.returncode != 0:
+                        print(f"エラー: 背景透過ツールがエラー(code {process.returncode})で終了しました。")
+                        raise subprocess.CalledProcessError(process.returncode, cmd)
+                        
+                except Exception as e:
+                    print(f"実行エラー: {e}")
+                    raise e
+                
                 current_input = output_bg
 
             # 3. Trim
