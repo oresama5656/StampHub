@@ -1,0 +1,14 @@
+{
+    "tools": {
+        "stamp_maker_banana": "D:\\path\\to\\stamp_maker_banana\\main.py",
+        "bg_remover_3": "D:\\path\\to\\bg_remover_3\\main.py"
+    },
+    "directories": {
+        "input_dir": "path/to/your/input",
+        "output_dir": "path/to/your/output",
+        "temp_dir": "path/to/your/temp"
+    },
+    "settings": {
+        "create_temp_folders_if_missing": true
+    }
+}
