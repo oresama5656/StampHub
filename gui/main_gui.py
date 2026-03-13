@@ -202,7 +202,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.bg_opts.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         
         # --- Mode Selection ---
-        self.bg_mode_var = ctk.StringVar(value="AI Only")
+        self.bg_mode_var = ctk.StringVar(value="Hybrid")
         ctk.CTkRadioButton(self.bg_opts, text="AIのみ抽出", variable=self.bg_mode_var, value="AI Only", command=self.update_bg_ui).grid(row=0, column=0, padx=5, pady=2, sticky="w")
         ctk.CTkRadioButton(self.bg_opts, text="ハイブリッド(文字維持)", variable=self.bg_mode_var, value="Hybrid", command=self.update_bg_ui).grid(row=0, column=1, padx=5, pady=2, sticky="w")
         
@@ -211,18 +211,18 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.common_bg_frame.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
         
         ctk.CTkLabel(self.common_bg_frame, text="フチ削り量:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
-        self.bg_erode_val_label = ctk.CTkLabel(self.common_bg_frame, text="10", width=30)
+        self.bg_erode_val_label = ctk.CTkLabel(self.common_bg_frame, text="2", width=30)
         self.bg_erode_val_label.grid(row=0, column=2, padx=5, pady=2)
         self.bg_erode_slider = ctk.CTkSlider(self.common_bg_frame, from_=0, to=30, number_of_steps=30, width=150, 
                                             command=lambda v: self.bg_erode_val_label.configure(text=str(int(v))))
-        self.bg_erode_slider.set(10)
+        self.bg_erode_slider.set(2)
         self.bg_erode_slider.grid(row=0, column=1, padx=5, pady=2, sticky="w")
         
         self.bg_fill_holes_var = ctk.BooleanVar(value=True)
         self.bg_fill_holes_check = ctk.CTkCheckBox(self.common_bg_frame, text="中抜け防止", variable=self.bg_fill_holes_var)
         self.bg_fill_holes_check.grid(row=1, column=0, padx=5, pady=2, sticky="w")
         
-        self.bg_gpu_var = ctk.BooleanVar(value=False)
+        self.bg_gpu_var = ctk.BooleanVar(value=True)
         self.bg_gpu_check = ctk.CTkCheckBox(self.common_bg_frame, text="GPU加速", variable=self.bg_gpu_var)
         self.bg_gpu_check.grid(row=1, column=1, padx=5, pady=2, sticky="w")
 
@@ -396,7 +396,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         btn_row1 = ctk.CTkFrame(card1, fg_color="transparent")
         btn_row1.pack(padx=20, pady=10, fill="x")
         ctk.CTkButton(btn_row1, text="統合を実行", command=self.exec_merge_prompts).pack(side="left", padx=5)
-        ctk.CTkButton(btn_row1, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(r"D:\sticker-project\outputs\prompts")).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row1, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(os.path.join(project_root, "assets", "prompts"))).pack(side="left", padx=5)
 
         # Create Folders Section
         card2 = ctk.CTkFrame(page)
@@ -407,18 +407,20 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         btn_row2 = ctk.CTkFrame(card2, fg_color="transparent")
         btn_row2.pack(padx=20, pady=10, fill="x")
         ctk.CTkButton(btn_row2, text="フォルダ作成を実行", command=self.exec_create_folders).pack(side="left", padx=5)
-        ctk.CTkButton(btn_row2, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(r"D:\sticker-project\outputs\images")).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row2, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(os.path.join(project_root, "assets", "images"))).pack(side="left", padx=5)
 
     def exec_merge_prompts(self):
-        prompts_dir = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "prompts")
-        output_file = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "all_prompts.csv")
+        # assets/prompts を統合して assets/all_prompts.csv を作成
+        prompts_dir = os.path.join(project_root, "assets", "prompts")
+        output_file = os.path.join(project_root, "assets", "all_prompts.csv")
         success, msg = merge_prompts(prompts_dir, output_file)
         print(f"\n[AIタスク] {msg}")
 
     def exec_create_folders(self):
         csv_path = ctk.filedialog.askopenfilename(title="テーマを読み取るCSVを選択", initialdir=self.config_mgr.get_path("stamps_csv_dir"), filetypes=[("CSV files", "*.csv")])
         if csv_path:
-            output_dir = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "images")
+            # assets/images 内にフォルダを作成
+            output_dir = os.path.join(project_root, "assets", "images")
             count, msg = create_theme_folders(csv_path, output_dir)
             print(f"\n[フォルダタスク] {msg}")
 
@@ -531,10 +533,27 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         desc = "完成したスタンプZIPをLINE公式のマイページへ自動アップロードします。"
         ctk.CTkLabel(page, text=desc, font=("Arial", 12)).pack(padx=20, pady=(0, 20), anchor="w")
         
-        btn_launch = ctk.CTkButton(page, text="Uploader 起動", height=60, width=300, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=lambda: self.launch_external_tool("uploader"))
-        btn_launch.pack(padx=20, pady=20)
+        btn_row = ctk.CTkFrame(page, fg_color="transparent")
+        btn_row.pack(padx=20, pady=10)
 
-    def launch_external_tool(self, tool_key):
+        btn_launch = ctk.CTkButton(btn_row, text="Uploader 起動", height=60, width=250, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=self.launch_uploader_with_csv)
+        btn_launch.pack(side="left", padx=10)
+
+        btn_open_csv = ctk.CTkButton(btn_row, text="📂 CSVフォルダを開く", height=60, width=200, fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(self.config_mgr.get_path("stamps_csv_dir")))
+        btn_open_csv.pack(side="left", padx=10)
+
+    def launch_uploader_with_csv(self):
+        """CSVを選択してからアップローダーを起動する"""
+        initial_dir = self.config_mgr.get_path("stamps_csv_dir")
+        csv_path = ctk.filedialog.askopenfilename(
+            title="アップロードに使用するCSVを選択",
+            initialdir=initial_dir,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if csv_path:
+            self.launch_external_tool("uploader", extra_args=[csv_path])
+
+    def launch_external_tool(self, tool_key, extra_args=None):
         """外部ツールを個別に起動する"""
         tools_map = {
             "folder_sorter": self.config_mgr.get_path("folder_sorter_py"),
@@ -550,9 +569,18 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         try:
             work_dir = os.path.dirname(path)
             if path.endswith(".py"):
-                subprocess.Popen([sys.executable, path], cwd=work_dir)
+                cmd = [sys.executable, path]
+                if extra_args: cmd.extend(extra_args)
+                subprocess.Popen(cmd, cwd=work_dir)
             elif path.endswith(".bat"):
-                subprocess.Popen(["cmd", "/c", path], cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                # uploader の場合は main.py を優先して呼ぶ（引数対応のため）
+                script_py = os.path.join(work_dir, "main.py")
+                if os.path.exists(script_py) and tool_key == "uploader":
+                    cmd = [sys.executable, script_py]
+                    if extra_args: cmd.extend(extra_args)
+                    subprocess.Popen(cmd, cwd=work_dir)
+                else:
+                    subprocess.Popen(["cmd", "/c", path], cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
                 os.startfile(path)
         except Exception as e:
@@ -866,34 +894,19 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             print("削除対象のウォーターマーク画像が見つかりませんでした。")
 
     def delete_input_images(self):
-        """入力フォルダの画像ファイルのみを削除（サブフォルダやその他のファイルは残す）"""
-        input_dir = self.input_path_var.get()
+        """入力フォルダそのものを削除する"""
+        input_dir = self.input_path_var.get().strip()
         
         if not input_dir or not os.path.exists(input_dir):
             print("エラー: 入力フォルダが存在しません。")
             return
         
-        # 画像拡張子のリスト
-        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
-        
-        deleted_files = []
-        
-        for file in os.listdir(input_dir):
-            file_path = os.path.join(input_dir, file)
-            # ファイルのみ（フォルダは除外）、かつ画像ファイルの場合
-            if os.path.isfile(file_path):
-                ext = os.path.splitext(file)[1].lower()
-                if ext in image_extensions:
-                    try:
-                        os.remove(file_path)
-                        deleted_files.append(file)
-                    except Exception as e:
-                        print(f"削除エラー ({file}): {e}")
-        
-        if deleted_files:
-            print(f"入力画像クリア完了: {len(deleted_files)} 個の画像を削除しました。")
-        else:
-            print("削除対象の画像が見つかりませんでした。")
+        try:
+            shutil.rmtree(input_dir)
+            print(f"🗑️ 入力フォルダを削除しました: {os.path.abspath(input_dir)}")
+            self.input_path_var.set("") # パスをクリア
+        except Exception as e:
+            print(f"フォルダ削除エラー: {e}")
 
     def request_stop(self):
         """処理の中止をリクエストする"""

@@ -12,7 +12,7 @@ class ConfigManager:
             "autoprompter_bat": r"D:\LINE-\AutoPrompter\launch-chatgpt-prefix.bat",
             "uploader_bat": r"D:\line_stamp_uploader\run.bat",
             "workspace_dir": r"D:\StampHub\workspace\WorkBench",
-            "stamps_csv_dir": r"D:\StampHub\assets\stamps"
+            "stamps_csv_dir": r"D:\StampHub\assets\title_and_info"
         }
     }
 
