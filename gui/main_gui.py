@@ -19,17 +19,27 @@ from line_stamp_formatter import process_formatter
 
 # Configuration
 ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+ctk.set_default_color_theme("green") # LINE-like green theme
+
+LINE_GREEN = "#06C755"
+LINE_GREEN_HOVER = "#05B04C"
 
 class RedirectText(object):
     def __init__(self, text_widget):
         self.text_widget = text_widget
 
     def write(self, string):
-        self.text_widget.configure(state="normal")
-        self.text_widget.insert("end", string)
-        self.text_widget.see("end")
-        self.text_widget.configure(state="disabled")
+        # メインスレッドでウィジェットを更新するようにスケジュール
+        self.text_widget.after(0, self._append_text, string)
+
+    def _append_text(self, string):
+        try:
+            self.text_widget.configure(state="normal")
+            self.text_widget.insert("end", string)
+            self.text_widget.see("end")
+            self.text_widget.configure(state="disabled")
+        except Exception:
+            pass # ウィジェットが破棄されている場合などの対策
 
     def flush(self):
         pass
@@ -39,15 +49,75 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
         
-        self.title("StampHub (Banana Layout + bg_remover_3)")
-        self.geometry("750x950")
+        self.title("StampHub")
+        self.geometry("1000x900")
         
         # Grid configuration
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(6, weight=1) # Log area expands
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        
+        self.stop_requested = False
+        self.current_process = None
+        
+        # --- Sidebar ---
+        self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(5, weight=1)
+        
+        self.sidebar_label = ctk.CTkLabel(self.sidebar_frame, text="StampHub", font=ctk.CTkFont(size=24, weight="bold"), text_color=LINE_GREEN)
+        self.sidebar_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        
+        self.btn_page_create = ctk.CTkButton(self.sidebar_frame, text="🎨 スタンプ制作", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("create"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_create.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        
+        self.btn_page_manage = ctk.CTkButton(self.sidebar_frame, text="📂 管理・整理", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("manage"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_manage.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
+        
+        self.btn_page_ai = ctk.CTkButton(self.sidebar_frame, text="🤖 AIプロンプト", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("ai"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_ai.grid(row=3, column=0, padx=10, pady=5, sticky="ew")
+        
+        self.btn_page_upload = ctk.CTkButton(self.sidebar_frame, text="🚀 投稿・UP", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("upload"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_upload.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
+
+        # --- Main Content Area ---
+        self.main_content = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.main_content.grid(row=0, column=1, sticky="nsew")
+        self.main_content.grid_columnconfigure(0, weight=1)
+        self.main_content.grid_rowconfigure(0, weight=1)
+        
+        # --- Pages ---
+        self.pages = {}
+        self.setup_create_page()
+        self.setup_manage_page()
+        self.setup_ai_page()
+        self.setup_upload_page()
+        
+        # Select default page
+        self.select_page("create")
+
+    def select_page(self, name):
+        """表示するページを切り替える"""
+        for n, page in self.pages.items():
+            if n == name:
+                page.grid(row=0, column=0, sticky="nsew")
+                # ボタンの色を強調
+                btn = getattr(self, f"btn_page_{n}")
+                btn.configure(fg_color=LINE_GREEN, text_color="white")
+            else:
+                page.grid_forget()
+                btn = getattr(self, f"btn_page_{n}")
+                btn.configure(fg_color="transparent", text_color=("gray10", "gray90"))
+
+    def setup_create_page(self):
+        """スタンプ制作ページのUIを構築（既存のメインGUI）"""
+        page = ctk.CTkScrollableFrame(self.main_content, fg_color="transparent")
+        self.pages["create"] = page
+        
+        # Grid configuration for the scrollable area
+        page.grid_columnconfigure(0, weight=1)
 
         # --- 1. Input & Output Section ---
-        self.io_frame = ctk.CTkFrame(self)
+        self.io_frame = ctk.CTkFrame(page)
         self.io_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
         self.io_frame.grid_columnconfigure(1, weight=1)
 
@@ -74,13 +144,13 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         
         self.workbench_btn = ctk.CTkButton(
             self.io_frame, text="🛠️", width=40, font=("Arial", 16),
-            fg_color="#CC7722", hover_color="#A65E16",  # A tool-like color
+            fg_color="#CC7722", hover_color="#A65E16",
             command=self.set_workbench_output
         )
         self.workbench_btn.grid(row=1, column=3, padx=(0, 10), pady=5)
 
         # --- 2. Pipeline Options ---
-        self.options_frame = ctk.CTkFrame(self)
+        self.options_frame = ctk.CTkFrame(page)
         self.options_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
         self.options_frame.grid_columnconfigure(1, weight=1)
 
@@ -204,12 +274,20 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.date_check.pack(side="left", padx=10)
 
         # --- 3. Execution ---
-        self.run_btn = ctk.CTkButton(self, text="処理開始 (RUN)", font=("Arial", 16, "bold"), height=50, command=self.start_process)
-        self.run_btn.grid(row=2, column=0, padx=20, pady=20, sticky="ew")
+        self.exec_frame = ctk.CTkFrame(page, fg_color="transparent")
+        self.exec_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.exec_frame.grid_columnconfigure(0, weight=3)
+        self.exec_frame.grid_columnconfigure(1, weight=1)
+
+        self.run_btn = ctk.CTkButton(self.exec_frame, text="処理開始 (RUN)", font=("Arial", 16, "bold"), height=50, command=self.start_process)
+        self.run_btn.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+
+        self.stop_btn = ctk.CTkButton(self.exec_frame, text="中止", font=("Arial", 16, "bold"), height=50, fg_color="#D32F2F", hover_color="#B71C1C", command=self.request_stop, state="disabled")
+        self.stop_btn.grid(row=0, column=1, sticky="ew")
 
         # --- main/tab 再生成セクション ---
-        self.maintab_frame = ctk.CTkFrame(self)
-        self.maintab_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+        self.maintab_frame = ctk.CTkFrame(page)
+        self.maintab_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
         self.maintab_frame.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(self.maintab_frame, text="main/tab 再生成", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5, sticky="w")
@@ -228,8 +306,8 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.gen_maintab_btn.grid(row=0, column=3, padx=5, pady=5)
 
         # --- 完成後調整セクション ---
-        self.finish_frame = ctk.CTkFrame(self)
-        self.finish_frame.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
+        self.finish_frame = ctk.CTkFrame(page)
+        self.finish_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
         self.finish_frame.grid_columnconfigure(0, weight=1)
         
         # セクションヘッダー
@@ -269,14 +347,105 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.delete_input_btn.pack(side="left", padx=4, pady=4)
 
         # --- 4. Log Area ---
-        self.log_frame = ctk.CTkFrame(self)
-        self.log_frame.grid(row=6, column=0, padx=20, pady=10, sticky="nsew")
+        self.log_frame = ctk.CTkFrame(page)
+        self.log_frame.grid(row=5, column=0, padx=20, pady=10, sticky="nsew")
+        self.log_frame.grid_rowconfigure(0, weight=1)
+        self.log_frame.grid_columnconfigure(0, weight=1)
         
-        self.log_text = ctk.CTkTextbox(self.log_frame, state="disabled", font=("Consolas", 10))
-        self.log_text.pack(fill="both", expand=True, padx=5, pady=5)
+        self.log_text = ctk.CTkTextbox(self.log_frame, state="disabled", font=("Consolas", 10), height=200)
+        self.log_text.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Redirect stdout
+        # Redirect stdout and stderr
         sys.stdout = RedirectText(self.log_text)
+        sys.stderr = RedirectText(self.log_text)
+
+    def setup_manage_page(self):
+        """管理・整理ページのUIを構築（Folder Sorter統合）"""
+        page = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        self.pages["manage"] = page
+        page.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(page, text="📂 フォルダ管理・整理", font=("Arial", 20, "bold")).grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        
+        desc = "制作したスタンプを『アップロード待ち』に移動したり、完了したものを整理します。"
+        ctk.CTkLabel(page, text=desc, font=("Arial", 12)).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
+        
+        card = ctk.CTkFrame(page)
+        card.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        card.grid_columnconfigure(0, weight=1)
+        
+        # Folder Sorter Actions
+        btn_sorter = ctk.CTkButton(card, text="📦 製造完了（仕分け実行）", height=50, font=("Arial", 14, "bold"), fg_color="#1976D2", hover_color="#1565C0", command=self.run_folder_sorter_manufacture)
+        btn_sorter.grid(row=0, column=0, padx=20, pady=20, sticky="ew")
+        
+        btn_cleanup = ctk.CTkButton(card, text="🚀 投稿完了（片付け実行）", height=50, font=("Arial", 14, "bold"), fg_color="#388E3C", hover_color="#2E7D32", command=self.run_folder_sorter_upload)
+        btn_cleanup.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        
+        note = "※ D:\\sticker-porter\\folder_sorter.py の設定に従って自動仕分けを行います。"
+        ctk.CTkLabel(page, text=note, font=("Arial", 11), text_color="gray").grid(row=3, column=0, padx=20, pady=10, sticky="w")
+
+        btn_launch = ctk.CTkButton(page, text="Folder Sorter GUIを直接開く", width=200, command=lambda: self.launch_external_tool("folder_sorter"))
+        btn_launch.grid(row=4, column=0, padx=20, pady=20, sticky="w")
+
+    def setup_ai_page(self):
+        """AIプロンプトページのUIを構築（AutoPrompter統合）"""
+        page = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        self.pages["ai"] = page
+        
+        ctk.CTkLabel(page, text="🤖 AIプロンプト生成", font=("Arial", 20, "bold")).pack(padx=20, pady=20, anchor="w")
+        
+        desc = "ChatGPT等でスタンプ案を生成するためのプロンプト管理ツールを起動します。"
+        ctk.CTkLabel(page, text=desc, font=("Arial", 12)).pack(padx=20, pady=(0, 20), anchor="w")
+        
+        btn_launch = ctk.CTkButton(page, text="AutoPrompter 起動", height=60, width=300, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=lambda: self.launch_external_tool("autoprompter"))
+        btn_launch.pack(padx=20, pady=20)
+
+    def setup_upload_page(self):
+        """投稿ページのUIを構築（Uploader統合）"""
+        page = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        self.pages["upload"] = page
+        
+        ctk.CTkLabel(page, text="🚀 LINEスタンプ アップローダー", font=("Arial", 20, "bold")).pack(padx=20, pady=20, anchor="w")
+        
+        desc = "完成したスタンプZIPをLINE公式のマイページへ自動アップロードします。"
+        ctk.CTkLabel(page, text=desc, font=("Arial", 12)).pack(padx=20, pady=(0, 20), anchor="w")
+        
+        btn_launch = ctk.CTkButton(page, text="Uploader 起動", height=60, width=300, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=lambda: self.launch_external_tool("uploader"))
+        btn_launch.pack(padx=20, pady=20)
+
+    def launch_external_tool(self, tool_key):
+        """外部ツールを個別に起動する"""
+        tools_map = {
+            "folder_sorter": r"D:\sticker-porter\folder_sorter.py",
+            "autoprompter": r"D:\LINE-\AutoPrompter\launch-chatgpt-prefix.bat",
+            "uploader": r"D:\line_stamp_uploader\run.bat"
+        }
+        path = tools_map.get(tool_key)
+        if not path or not os.path.exists(path):
+            print(f"エラー: ツールが見つかりません: {path}")
+            return
+            
+        print(f"ツール起動中: {os.path.basename(path)}")
+        try:
+            work_dir = os.path.dirname(path)
+            if path.endswith(".py"):
+                subprocess.Popen([sys.executable, path], cwd=work_dir)
+            elif path.endswith(".bat"):
+                subprocess.Popen(["cmd", "/c", path], cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
+                os.startfile(path)
+        except Exception as e:
+            print(f"起動失敗: {e}")
+
+    def run_folder_sorter_manufacture(self):
+        """Folder Sorterの仕分け機能をバックグラウンドで実行"""
+        print("\n[管理] 仕分け処理を開始します...")
+        self.launch_external_tool("folder_sorter") 
+
+    def run_folder_sorter_upload(self):
+        """Folder Sorterの片付け機能をバックグラウンドで実行"""
+        print("\n[管理] 片付け処理を開始します...")
+        self.launch_external_tool("folder_sorter")
 
     def update_bg_ui(self):
         """モードに応じてUIの表示/非表示を切り替える"""
@@ -599,6 +768,18 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         else:
             print("削除対象の画像が見つかりませんでした。")
 
+    def request_stop(self):
+        """処理の中止をリクエストする"""
+        self.stop_requested = True
+        print("\n[INFO] 中止リクエストを送信しました。現在のステップ終了後に停止します...")
+        if self.current_process:
+            try:
+                self.current_process.terminate()
+                print("[INFO] 外部プロセスに終了信号を送信しました。")
+            except Exception as e:
+                print(f"[ERROR] プロセス終了中にエラーが発生しました: {e}")
+        self.stop_btn.configure(state="disabled")
+
     def start_process(self):
         input_dir = self.input_path_var.get()
         output_dir = self.output_path_var.get()
@@ -611,7 +792,9 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             print("エラー: 出力フォルダを選択してください。")
             return
 
+        self.stop_requested = False
         self.run_btn.configure(state="disabled", text="処理中...")
+        self.stop_btn.configure(state="normal")
         
         # Run in thread
         thread = threading.Thread(target=self.run_pipeline, args=(input_dir, output_dir))
@@ -633,6 +816,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 except ValueError:
                     inner_margin = 0
                 
+                if self.stop_requested: return
                 print("\n[Step 1] スタンプ画像を分割中...")
                 # Splitter defaults: tolerance=50, erosion=1 (hidden from UI)
                 # remove_bg=False because we have a separate BG removal step
@@ -649,6 +833,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
 
             # 2. BG Remove (External Tool: bg_remover_3)
             if self.check_bg_var.get():
+                if self.stop_requested: return
                 output_bg = os.path.join(final_output_dir, "temp_bg")
                 if os.path.exists(output_bg): shutil.rmtree(output_bg)
                 
@@ -679,37 +864,67 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 
                 # Execute external tool (Live log redirection)
                 try:
+                    if self.stop_requested: return
                     print(f"DEBUG: 実行コマンド: {' '.join(cmd)}")
+                    
+                    # 出荷時設定に合わせて -u (unbuffered) を追加して出力を確実に取得する
+                    python_exe = cmd[0]
+                    new_cmd = [python_exe, "-u"] + cmd[1:]
+                    
+                    # エンコーディング指定を確実に通すための環境変数
+                    env = os.environ.copy()
+                    env["PYTHONIOENCODING"] = "utf-8"
+                    
                     process = subprocess.Popen(
-                        cmd, 
+                        new_cmd, 
                         stdout=subprocess.PIPE, 
                         stderr=subprocess.STDOUT, 
                         text=True, 
-                        encoding="cp932",
+                        encoding="utf-8", # bg_remover_3に合わせてutf-8を使用
                         errors="replace",
                         bufsize=1,
-                        universal_newlines=True
+                        universal_newlines=True,
+                        env=env
                     )
+                    self.current_process = process
                     
-                    # Read stdout line by line and print to redirect to GUI
+                    # Read stdout character by character to handle progress dots etc.
                     if process.stdout:
-                        for line in iter(process.stdout.readline, ""):
-                            print(line, end="")
+                        while True:
+                            if self.stop_requested:
+                                process.terminate()
+                                break
+                            char = process.stdout.read(1)
+                            if not char and process.poll() is not None:
+                                break
+                            if char:
+                                print(char, end="", flush=True)
                     
                     process.wait()
+                    self.current_process = None
                     
+                    if self.stop_requested:
+                        print("\n[INFO] 背景透過処理を中断しました。")
+                        return
+
                     if process.returncode != 0:
                         print(f"エラー: 背景透過ツールがエラー(code {process.returncode})で終了しました。")
                         raise subprocess.CalledProcessError(process.returncode, cmd)
                         
                 except Exception as e:
-                    print(f"実行エラー: {e}")
-                    raise e
+                    self.current_process = None
+                    if not self.stop_requested:
+                        print(f"実行エラー: {e}")
+                        raise e
+                    else:
+                        print("\n[INFO] 処理が中止されました。")
+                        return
                 
                 current_input = output_bg
 
             # 3. Trim
             if self.check_trim_var.get():
+                if self.stop_requested: return
                 output_trim = os.path.join(final_output_dir, "temp_trim")
                 if os.path.exists(output_trim): shutil.rmtree(output_trim)
                 
@@ -724,10 +939,12 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
 
             # 4. Format
             if self.check_fmt_var.get():
+                if self.stop_requested: return
                 print("\n[Step 4] LINEスタンプ形式に整形中...")
                 process_formatter(current_input, final_output_dir)
                 print(f"\n完了！ 出力先: {os.path.abspath(final_output_dir)}")
             else:
+                if self.stop_requested: return
                 print(f"\n処理完了。 最終出力: {os.path.abspath(current_input)}")
 
             # 一時フォルダを削除
@@ -785,7 +1002,11 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             traceback.print_exc()
         finally:
             self.run_btn.configure(state="normal", text="処理開始 (RUN)")
-            print("\n--- 終了 ---")
+            self.stop_btn.configure(state="disabled")
+            if self.stop_requested:
+                print("\n--- 中止 ---")
+            else:
+                print("\n--- 終了 ---")
 
 if __name__ == "__main__":
     app = StampMakerGUI()
