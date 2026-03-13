@@ -410,15 +410,15 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         ctk.CTkButton(btn_row2, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(r"D:\sticker-project\outputs\images")).pack(side="left", padx=5)
 
     def exec_merge_prompts(self):
-        prompts_dir = r"D:\sticker-project\outputs\prompts"
-        output_file = r"D:\sticker-project\outputs\all_prompts.csv"
+        prompts_dir = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "prompts")
+        output_file = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "all_prompts.csv")
         success, msg = merge_prompts(prompts_dir, output_file)
         print(f"\n[AIタスク] {msg}")
 
     def exec_create_folders(self):
-        csv_path = ctk.filedialog.askopenfilename(title="テーマを読み取るCSVを選択", filetypes=[("CSV files", "*.csv")])
+        csv_path = ctk.filedialog.askopenfilename(title="テーマを読み取るCSVを選択", initialdir=self.config_mgr.get_path("stamps_csv_dir"), filetypes=[("CSV files", "*.csv")])
         if csv_path:
-            output_dir = r"D:\sticker-project\outputs\images"
+            output_dir = os.path.join(os.path.dirname(self.config_mgr.get_path("stamps_csv_dir")), "images")
             count, msg = create_theme_folders(csv_path, output_dir)
             print(f"\n[フォルダタスク] {msg}")
 
@@ -438,7 +438,8 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             ("bg_remover_python", "背景透過用 Python (.venv/python.exe)"),
             ("folder_sorter_py", "管理用ツール (folder_sorter.py)"),
             ("autoprompter_bat", "AIプロンプト (AutoPrompter bat)"),
-            ("uploader_bat", "アップローダー (run.bat)")
+            ("uploader_bat", "アップローダー (run.bat)"),
+            ("stamps_csv_dir", "投稿用CSVフォルダ (stamps_data.csv等)")
         ]
         
         for i, (key, label) in enumerate(path_configs, start=1):
@@ -486,8 +487,12 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         desc = "制作したスタンプを『アップロード待ち』に移動したり、完了したものを整理します。"
         ctk.CTkLabel(page, text=desc, font=("Arial", 12)).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
         
+        # Open workspace folder button
+        btn_open_ws = ctk.CTkButton(page, text="📂 作業フォルダを開く", width=200, fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(self.config_mgr.get_path("workspace_dir")))
+        btn_open_ws.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+
         card = ctk.CTkFrame(page)
-        card.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        card.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
         card.grid_columnconfigure(0, weight=1)
         
         # Folder Sorter Actions

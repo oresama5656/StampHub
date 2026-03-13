@@ -5,6 +5,7 @@
         "folder_sorter_py": "D:\\sticker-porter\\folder_sorter.py",
         "autoprompter_bat": "D:\\LINE-\\AutoPrompter\\launch-chatgpt-prefix.bat",
         "uploader_bat": "D:\\line_stamp_uploader\\run.bat",
-        "workspace_dir": "D:\\StampHub\\workspace\\WorkBench"
+        "workspace_dir": "D:\\StampHub\\workspace\\WorkBench",
+        "stamps_csv_dir": "D:\\StampHub\\assets\\title_and_info"
     }
 }

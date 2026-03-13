@@ -11,7 +11,8 @@ class ConfigManager:
             "folder_sorter_py": r"D:\sticker-porter\folder_sorter.py",
             "autoprompter_bat": r"D:\LINE-\AutoPrompter\launch-chatgpt-prefix.bat",
             "uploader_bat": r"D:\line_stamp_uploader\run.bat",
-            "workspace_dir": r"D:\StampHub\workspace\WorkBench"
+            "workspace_dir": r"D:\StampHub\workspace\WorkBench",
+            "stamps_csv_dir": r"D:\StampHub\assets\stamps"
         }
     }
 
