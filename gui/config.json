@@ -1,0 +1,10 @@
+{
+    "paths": {
+        "bg_remover_py": "D:\\bg_remover_3\\bg_remover.py",
+        "bg_remover_python": "D:\\bg_remover_3\\.venv\\Scripts\\python.exe",
+        "folder_sorter_py": "D:\\sticker-porter\\folder_sorter.py",
+        "autoprompter_bat": "D:\\LINE-\\AutoPrompter\\launch-chatgpt-prefix.bat",
+        "uploader_bat": "D:\\line_stamp_uploader\\run.bat",
+        "workspace_dir": "D:\\StampHub\\workspace\\WorkBench"
+    }
+}

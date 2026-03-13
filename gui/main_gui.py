@@ -10,12 +10,21 @@ from datetime import datetime
 import sys
 import os
 import subprocess
+
+# プロジェクトのルートディレクトリを検索パスに追加
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 sys.path.append(r"D:\stamp_maker_banana")
 
 from stamp_splitter_v2 import process_splitter
 # from background_remover import process_remover  # Replacing with bg_remover_3
 from auto_trimmer import process_auto_trimmer
 from line_stamp_formatter import process_formatter
+
+from core.config_manager import ConfigManager
+from core.tasks import create_theme_folders, merge_prompts
 
 # Configuration
 ctk.set_appearance_mode("Dark")
@@ -56,6 +65,9 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
         
+        # Load Configuration
+        self.config_mgr = ConfigManager()
+        
         self.stop_requested = False
         self.current_process = None
         
@@ -73,11 +85,17 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.btn_page_manage = ctk.CTkButton(self.sidebar_frame, text="📂 管理・整理", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("manage"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
         self.btn_page_manage.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
         
-        self.btn_page_ai = ctk.CTkButton(self.sidebar_frame, text="🤖 AIプロンプト", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("ai"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
-        self.btn_page_ai.grid(row=3, column=0, padx=10, pady=5, sticky="ew")
+        self.btn_page_tasks = ctk.CTkButton(self.sidebar_frame, text="📁 AI & フォルダ", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("tasks"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_tasks.grid(row=3, column=0, padx=10, pady=5, sticky="ew")
+        
+        self.btn_page_ai = ctk.CTkButton(self.sidebar_frame, text="🤖 連携ツール", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("ai"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_ai.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
         
         self.btn_page_upload = ctk.CTkButton(self.sidebar_frame, text="🚀 投稿・UP", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("upload"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
-        self.btn_page_upload.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
+        self.btn_page_upload.grid(row=5, column=0, padx=10, pady=5, sticky="ew")
+
+        self.btn_page_settings = ctk.CTkButton(self.sidebar_frame, text="⚙️ 設定", font=("Arial", 13, "bold"), anchor="w", command=lambda: self.select_page("settings"), fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
+        self.btn_page_settings.grid(row=6, column=0, padx=10, pady=5, sticky="ew")
 
         # --- Main Content Area ---
         self.main_content = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -89,8 +107,10 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.pages = {}
         self.setup_create_page()
         self.setup_manage_page()
+        self.setup_tasks_page()
         self.setup_ai_page()
         self.setup_upload_page()
+        self.setup_settings_page()
         
         # Select default page
         self.select_page("create")
@@ -135,7 +155,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
 
         # Output
         ctk.CTkLabel(self.io_frame, text="出力フォルダ:", font=("Arial", 12, "bold")).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        self.output_path_var = ctk.StringVar(value="output_final")
+        self.output_path_var = ctk.StringVar(value=self.config_mgr.get_path("workspace_dir"))
         self.output_entry = ctk.CTkEntry(self.io_frame, textvariable=self.output_path_var, placeholder_text="出力先フォルダを選択")
         self.output_entry.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         
@@ -359,6 +379,102 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         sys.stdout = RedirectText(self.log_text)
         sys.stderr = RedirectText(self.log_text)
 
+    def setup_tasks_page(self):
+        """AI連携 & フォルダ一括作成ページのUI"""
+        page = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        self.pages["tasks"] = page
+        page.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(page, text="📁 AI連携 & フォルダ一括操作", font=("Arial", 20, "bold")).grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        
+        # Merge Section
+        card1 = ctk.CTkFrame(page)
+        card1.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        ctk.CTkLabel(card1, text="1. プロンプトCSV統合 (merge_prompts)", font=("Arial", 13, "bold")).pack(padx=10, pady=5, anchor="w")
+        ctk.CTkLabel(card1, text="outputs/prompts/ 内の個別CSVを一つにまとめます。", font=("Arial", 11)).pack(padx=10, pady=(0, 10), anchor="w")
+        
+        btn_row1 = ctk.CTkFrame(card1, fg_color="transparent")
+        btn_row1.pack(padx=20, pady=10, fill="x")
+        ctk.CTkButton(btn_row1, text="統合を実行", command=self.exec_merge_prompts).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row1, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(r"D:\sticker-project\outputs\prompts")).pack(side="left", padx=5)
+
+        # Create Folders Section
+        card2 = ctk.CTkFrame(page)
+        card2.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        ctk.CTkLabel(card2, text="2. テーマフォルダ一括作成 (create_theme_folders)", font=("Arial", 13, "bold")).pack(padx=10, pady=5, anchor="w")
+        ctk.CTkLabel(card2, text="CSVに記載されたテーマ名のフォルダを images/ 内に作成します。", font=("Arial", 11)).pack(padx=10, pady=(0, 10), anchor="w")
+        
+        btn_row2 = ctk.CTkFrame(card2, fg_color="transparent")
+        btn_row2.pack(padx=20, pady=10, fill="x")
+        ctk.CTkButton(btn_row2, text="フォルダ作成を実行", command=self.exec_create_folders).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row2, text="📂 フォルダを開く", fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(r"D:\sticker-project\outputs\images")).pack(side="left", padx=5)
+
+    def exec_merge_prompts(self):
+        prompts_dir = r"D:\sticker-project\outputs\prompts"
+        output_file = r"D:\sticker-project\outputs\all_prompts.csv"
+        success, msg = merge_prompts(prompts_dir, output_file)
+        print(f"\n[AIタスク] {msg}")
+
+    def exec_create_folders(self):
+        csv_path = ctk.filedialog.askopenfilename(title="テーマを読み取るCSVを選択", filetypes=[("CSV files", "*.csv")])
+        if csv_path:
+            output_dir = r"D:\sticker-project\outputs\images"
+            count, msg = create_theme_folders(csv_path, output_dir)
+            print(f"\n[フォルダタスク] {msg}")
+
+    def setup_settings_page(self):
+        """設定ページのUIを構築"""
+        page = ctk.CTkScrollableFrame(self.main_content, fg_color="transparent")
+        self.pages["settings"] = page
+        page.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(page, text="⚙️ システム設定", font=("Arial", 20, "bold")).grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        
+        self.path_entries = {}
+        
+        path_configs = [
+            ("workspace_dir", "作業用フォルダ (WorkBench)"),
+            ("bg_remover_py", "背景透過ツール (bg_remover.py)"),
+            ("bg_remover_python", "背景透過用 Python (.venv/python.exe)"),
+            ("folder_sorter_py", "管理用ツール (folder_sorter.py)"),
+            ("autoprompter_bat", "AIプロンプト (AutoPrompter bat)"),
+            ("uploader_bat", "アップローダー (run.bat)")
+        ]
+        
+        for i, (key, label) in enumerate(path_configs, start=1):
+            frame = ctk.CTkFrame(page)
+            frame.grid(row=i, column=0, padx=20, pady=5, sticky="ew")
+            frame.grid_columnconfigure(1, weight=1)
+            
+            ctk.CTkLabel(frame, text=label, width=250, anchor="w").grid(row=0, column=0, padx=10, pady=5)
+            
+            var = ctk.StringVar(value=self.config_mgr.get_path(key))
+            entry = ctk.CTkEntry(frame, textvariable=var)
+            entry.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+            self.path_entries[key] = var
+            
+            btn = ctk.CTkButton(frame, text="選択", width=60, command=lambda k=key, v=var: self.browse_path_for_setting(k, v))
+            btn.grid(row=0, column=2, padx=10, pady=5)
+
+        save_btn = ctk.CTkButton(page, text="設定を保存", height=40, font=("Arial", 14, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=self.save_settings)
+        save_btn.grid(row=len(path_configs)+1, column=0, padx=20, pady=30, sticky="ew")
+
+    def browse_path_for_setting(self, key, var):
+        if key.endswith("_dir") or key == "workspace_dir":
+            path = ctk.filedialog.askdirectory()
+        else:
+            path = ctk.filedialog.askopenfilename()
+        if path:
+            var.set(path)
+
+    def save_settings(self):
+        for key, var in self.path_entries.items():
+            self.config_mgr.set_path(key, var.get())
+        if self.config_mgr.save_config():
+            print("\n[INFO] 設定を保存しました。")
+        else:
+            print("\n[ERROR] 設定の保存に失敗しました。")
+
     def setup_manage_page(self):
         """管理・整理ページのUIを構築（Folder Sorter統合）"""
         page = ctk.CTkFrame(self.main_content, fg_color="transparent")
@@ -416,13 +532,13 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
     def launch_external_tool(self, tool_key):
         """外部ツールを個別に起動する"""
         tools_map = {
-            "folder_sorter": r"D:\sticker-porter\folder_sorter.py",
-            "autoprompter": r"D:\LINE-\AutoPrompter\launch-chatgpt-prefix.bat",
-            "uploader": r"D:\line_stamp_uploader\run.bat"
+            "folder_sorter": self.config_mgr.get_path("folder_sorter_py"),
+            "autoprompter": self.config_mgr.get_path("autoprompter_bat"),
+            "uploader": self.config_mgr.get_path("uploader_bat")
         }
         path = tools_map.get(tool_key)
         if not path or not os.path.exists(path):
-            print(f"エラー: ツールが見つかりません: {path}")
+            print(f"エラー: ツールが見つかりません。設定画面を確認してください:\n {path}")
             return
             
         print(f"ツール起動中: {os.path.basename(path)}")
@@ -446,6 +562,13 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         """Folder Sorterの片付け機能をバックグラウンドで実行"""
         print("\n[管理] 片付け処理を開始します...")
         self.launch_external_tool("folder_sorter")
+
+    def _open_folder(self, path):
+        """指定したパスをエクスプローラーで開く共通メソッド"""
+        if os.path.exists(path):
+            subprocess.Popen(['explorer', os.path.abspath(path)])
+        else:
+            print(f"エラー: フォルダが見つかりません: {path}")
 
     def update_bg_ui(self):
         """モードに応じてUIの表示/非表示を切り替える"""
@@ -482,9 +605,8 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             self.output_path_var.set(folder)
 
     def set_workbench_output(self):
-        """作業台フォルダ（相対パス）を一発で設定する"""
-        # StampHub/gui から見て、ドライブのルートにある sticker-porter を指定するため、2つさかのぼる
-        workbench_path = os.path.join("..", "..", "sticker-porter", "00_WorkBench")
+        """作業台フォルダ（設定されたworkspace）を一発で設定する"""
+        workbench_path = self.config_mgr.get_path("workspace_dir")
         self.output_path_var.set(workbench_path)
 
     def select_image_for_maintab(self):
@@ -840,8 +962,12 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 print("\n[Step 2] 背景を透過中 (bg_remover_3 を呼び出し)...")
                 
                 # Build command
-                bg_remover_py = r"D:\bg_remover_3\bg_remover.py"
-                bg_remover_venv_python = r"D:\bg_remover_3\.venv\Scripts\python.exe"
+                bg_remover_py = self.config_mgr.get_path("bg_remover_py")
+                bg_remover_venv_python = self.config_mgr.get_path("bg_remover_python")
+
+                if not os.path.exists(bg_remover_py) or not os.path.exists(bg_remover_venv_python):
+                    print(f"エラー: 背景透過ツールのパスが正しくありません。設定画面を確認してください。")
+                    return
                 
                 cmd = [
                     bg_remover_venv_python, bg_remover_py,

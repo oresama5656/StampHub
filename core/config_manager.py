@@ -1,65 +1,66 @@
 import json
 import os
 
-CONFIG_FILE = "config.json"
-
-DEFAULT_CONFIG = {
-    "tools": {
-        "stamp_maker_banana": "D:\\stamp_maker_banana\\main.py",
-        "bg_remover_3": "D:\\bg_remover_3\\main.py"
-    },
-    "directories": {
-        "input_dir": "D:\\StampHub\\input",
-        "output_dir": "D:\\StampHub\\output",
-        "temp_dir": "D:\\StampHub\\temp"
-    },
-    "settings": {
-        "create_temp_folders_if_missing": True
-    }
-}
-
 class ConfigManager:
-    def __init__(self, config_path=CONFIG_FILE):
+    """StampHubの設定を管理するクラス"""
+    
+    DEFAULT_CONFIG = {
+        "paths": {
+            "bg_remover_py": r"D:\bg_remover_3\bg_remover.py",
+            "bg_remover_python": r"D:\bg_remover_3\.venv\Scripts\python.exe",
+            "folder_sorter_py": r"D:\sticker-porter\folder_sorter.py",
+            "autoprompter_bat": r"D:\LINE-\AutoPrompter\launch-chatgpt-prefix.bat",
+            "uploader_bat": r"D:\line_stamp_uploader\run.bat",
+            "workspace_dir": r"D:\StampHub\workspace\WorkBench"
+        }
+    }
+
+    def __init__(self, config_path="config.json"):
         self.config_path = config_path
-        self.config = self._load_or_create()
+        self.config = self.load_config()
 
-    def _load_or_create(self):
-        if not os.path.exists(self.config_path):
-            self._save_config(DEFAULT_CONFIG)
-            return DEFAULT_CONFIG
-        
+    def load_config(self):
+        """config.jsonを読み込む。存在しない場合はデフォルトを作成。"""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    # 足りないキーがあればデフォルトで補完
+                    self._merge_dicts(self.DEFAULT_CONFIG, data)
+                    return data
+            except Exception as e:
+                print(f"Error loading config: {e}")
+                return self.DEFAULT_CONFIG.copy()
+        else:
+            self.save_config(self.DEFAULT_CONFIG)
+            return self.DEFAULT_CONFIG.copy()
+
+    def save_config(self, config_data=None):
+        """設定を保存する"""
+        if config_data:
+            self.config = config_data
         try:
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                # Merge with default config to ensure all keys exist
-                config = self._merge_configs(DEFAULT_CONFIG, config)
-                self._save_config(config) # save the merged config back
-                return config
-        except json.JSONDecodeError:
-            print(f"Error parsing {self.config_path}. Recreating with defaults.")
-            self._save_config(DEFAULT_CONFIG)
-            return DEFAULT_CONFIG
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, indent=4, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"Error saving config: {e}")
+            return False
 
-    def _merge_configs(self, default, current):
-        """Recursively merge defaults into current config for missing keys"""
+    def get_path(self, key):
+        """パス設定を取得"""
+        return self.config.get("paths", {}).get(key, "")
+
+    def set_path(self, key, value):
+        """パス設定を更新"""
+        if "paths" not in self.config:
+            self.config["paths"] = {}
+        self.config["paths"][key] = value
+
+    def _merge_dicts(self, default, target):
+        """再帰的に辞書をマージして不足分を補う"""
         for key, value in default.items():
-            if key not in current:
-                current[key] = value
-            elif isinstance(value, dict) and isinstance(current[key], dict):
-                self._merge_configs(value, current[key])
-        return current
-
-    def _save_config(self, config_data):
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=4, ensure_ascii=False)
-            
-    def get(self, section, key=None):
-        if key:
-            return self.config.get(section, {}).get(key)
-        return self.config.get(section)
-
-    def set(self, section, key, value):
-        if section not in self.config:
-            self.config[section] = {}
-        self.config[section][key] = value
-        self._save_config(self.config)
+            if key not in target:
+                target[key] = value
+            elif isinstance(value, dict) and isinstance(target[key], dict):
+                self._merge_dicts(value, target[key])
