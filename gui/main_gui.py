@@ -188,10 +188,30 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.grid_combo.pack(side="left", padx=5)
 
         ctk.CTkLabel(self.split_opts, text="内側フチ除去:").pack(side="left", padx=(15, 5))
+        self.split_margin_mode_var = ctk.StringVar(value="uniform") # "uniform" or "individual"
+        self.split_margin_mode_check = ctk.CTkCheckBox(self.split_opts, text="個別", variable=self.split_margin_mode_var, onvalue="individual", offvalue="uniform", width=40, command=self.toggle_margin_ui)
+        self.split_margin_mode_check.pack(side="left", padx=5)
+
+        # Uniform margin entry
+        self.split_margin_uniform_frame = ctk.CTkFrame(self.split_opts, fg_color="transparent")
+        self.split_margin_uniform_frame.pack(side="left")
         self.split_margin_var = ctk.StringVar(value="0")
-        self.split_margin_entry = ctk.CTkEntry(self.split_opts, textvariable=self.split_margin_var, width=40)
-        self.split_margin_entry.pack(side="left", padx=5)
-        ctk.CTkLabel(self.split_opts, text="px").pack(side="left")
+        self.split_margin_entry = ctk.CTkEntry(self.split_margin_uniform_frame, textvariable=self.split_margin_var, width=40)
+        self.split_margin_entry.pack(side="left", padx=2)
+        ctk.CTkLabel(self.split_margin_uniform_frame, text="px").pack(side="left")
+
+        # Individual margin entries
+        self.split_margin_indiv_frame = ctk.CTkFrame(self.split_opts, fg_color="transparent")
+        # Initially hidden, will be shown by toggle_margin_ui
+        
+        self.m_top_var = ctk.StringVar(value="0")
+        self.m_bottom_var = ctk.StringVar(value="0")
+        self.m_left_var = ctk.StringVar(value="0")
+        self.m_right_var = ctk.StringVar(value="0")
+
+        for label, var in [("上", self.m_top_var), ("下", self.m_bottom_var), ("左", self.m_left_var), ("右", self.m_right_var)]:
+            ctk.CTkLabel(self.split_margin_indiv_frame, text=f"{label}:", font=("Arial", 10)).pack(side="left", padx=(4, 1))
+            ctk.CTkEntry(self.split_margin_indiv_frame, textvariable=var, width=35).pack(side="left")
 
         # Step 2: BG Remove (High Precision bg_remover_3 integration)
         self.check_bg_var = ctk.BooleanVar(value=False)
@@ -520,8 +540,15 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         desc = "ChatGPT等でスタンプ案を生成するためのプロンプト管理ツールを起動します。"
         ctk.CTkLabel(page, text=desc, font=("Arial", 12)).pack(padx=20, pady=(0, 20), anchor="w")
         
-        btn_launch = ctk.CTkButton(page, text="AutoPrompter 起動", height=60, width=300, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=lambda: self.launch_external_tool("autoprompter"))
-        btn_launch.pack(padx=20, pady=20)
+        # ボタンを並べるためのサブフレーム
+        btn_frame = ctk.CTkFrame(page, fg_color="transparent")
+        btn_frame.pack(padx=20, pady=20, anchor="w")
+
+        btn_launch = ctk.CTkButton(btn_frame, text="AutoPrompter 起動", height=60, width=300, font=("Arial", 16, "bold"), fg_color=LINE_GREEN, hover_color=LINE_GREEN_HOVER, command=lambda: self.launch_external_tool("autoprompter"))
+        btn_launch.pack(side="left", padx=(0, 10))
+
+        btn_open_prompts = ctk.CTkButton(btn_frame, text="📂 プロンプトフォルダ", height=60, width=200, fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(os.path.join(project_root, "assets", "prompts")))
+        btn_open_prompts.pack(side="left", padx=10)
 
     def setup_upload_page(self):
         """投稿ページのUIを構築（Uploader統合）"""
@@ -602,6 +629,15 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             subprocess.Popen(['explorer', os.path.abspath(path)])
         else:
             print(f"エラー: フォルダが見つかりません: {path}")
+
+    def toggle_margin_ui(self):
+        """マージンモードに応じてUIの表示/非表示を切り替える"""
+        if self.split_margin_mode_var.get() == "individual":
+            self.split_margin_uniform_frame.pack_forget()
+            self.split_margin_indiv_frame.pack(side="left")
+        else:
+            self.split_margin_indiv_frame.pack_forget()
+            self.split_margin_uniform_frame.pack(side="left")
 
     def update_bg_ui(self):
         """モードに応じてUIの表示/非表示を切り替える"""
@@ -951,10 +987,21 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 output_split = os.path.join(final_output_dir, "temp_split")
                 if os.path.exists(output_split): shutil.rmtree(output_split)
                 
-                try:
-                    inner_margin = int(self.split_margin_var.get())
-                except ValueError:
-                    inner_margin = 0
+                if self.split_margin_mode_var.get() == "individual":
+                    try:
+                        inner_margin = [
+                            int(self.m_top_var.get()),
+                            int(self.m_bottom_var.get()),
+                            int(self.m_left_var.get()),
+                            int(self.m_right_var.get())
+                        ]
+                    except ValueError:
+                        inner_margin = [0, 0, 0, 0]
+                else:
+                    try:
+                        inner_margin = int(self.split_margin_var.get())
+                    except ValueError:
+                        inner_margin = 0
                 
                 if self.stop_requested: return
                 print("\n[Step 1] スタンプ画像を分割中...")
