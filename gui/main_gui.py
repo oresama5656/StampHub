@@ -24,7 +24,7 @@ from auto_trimmer import process_auto_trimmer
 from line_stamp_formatter import process_formatter
 
 from core.config_manager import ConfigManager
-from core.tasks import create_theme_folders, merge_prompts
+from core.tasks import create_theme_folders, merge_prompts, organize_workbench, archive_uploaded
 
 # Configuration
 ctk.set_appearance_mode("Dark")
@@ -64,6 +64,7 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         # Grid configuration
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0) # Status bar row
         
         # Load Configuration
         self.config_mgr = ConfigManager()
@@ -112,6 +113,13 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
         self.setup_upload_page()
         self.setup_settings_page()
         
+        # --- Common Status Bar ---
+        self.status_bar = ctk.CTkFrame(self, height=28, corner_radius=0, fg_color=("#E0E0E0", "#202020"))
+        self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+        
+        self.status_label_common = ctk.CTkLabel(self.status_bar, text="Ready", font=("Arial", 11), text_color=("gray30", "gray70"))
+        self.status_label_common.pack(side="left", padx=20)
+
         # Select default page
         self.select_page("create")
 
@@ -123,6 +131,10 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
                 # ボタンの色を強調
                 btn = getattr(self, f"btn_page_{n}")
                 btn.configure(fg_color=LINE_GREEN, text_color="white")
+                
+                # 管理タブならフォルダ容量を更新
+                if n == "manage":
+                    self.update_folder_sizes()
             else:
                 page.grid_forget()
                 btn = getattr(self, f"btn_page_{n}")
@@ -499,36 +511,136 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             print("\n[ERROR] 設定の保存に失敗しました。")
 
     def setup_manage_page(self):
-        """管理・整理ページのUIを構築（Folder Sorter統合）"""
-        page = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        """管理・整理ページのUIを構築（プレミアム・リニューアル）"""
+        page = ctk.CTkScrollableFrame(self.main_content, fg_color="transparent")
         self.pages["manage"] = page
         page.grid_columnconfigure(0, weight=1)
         
-        ctk.CTkLabel(page, text="📂 フォルダ管理・整理", font=("Arial", 20, "bold")).grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        # --- Header ---
+        header_frame = ctk.CTkFrame(page, fg_color="transparent")
+        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
         
-        desc = "制作したスタンプを『アップロード待ち』に移動したり、完了したものを整理します。"
-        ctk.CTkLabel(page, text=desc, font=("Arial", 12)).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
+        ctk.CTkLabel(header_frame, text="📂 ストレージ管理・整理", font=("Arial", 24, "bold")).pack(side="left")
+        ctk.CTkLabel(header_frame, text="システムのクリーンアップとフォルダ管理", font=("Arial", 12), text_color="gray70").pack(side="left", padx=20, pady=(8, 0))
         
-        # Open workspace folder button
-        btn_open_ws = ctk.CTkButton(page, text="📂 作業フォルダを開く", width=200, fg_color="gray30", hover_color="gray40", command=lambda: self._open_folder(self.config_mgr.get_path("workspace_dir")))
-        btn_open_ws.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+        # Refresh Button
+        self.btn_refresh_sizes = ctk.CTkButton(header_frame, text="🔄 容量を更新", width=120, height=32, font=("Arial", 12, "bold"), fg_color=("gray85", "gray25"), text_color=("gray10", "gray90"), hover_color=("gray75", "gray35"), command=self.update_folder_sizes)
+        self.btn_refresh_sizes.pack(side="right", padx=10, pady=(5, 0))
 
-        card = ctk.CTkFrame(page)
-        card.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
-        card.grid_columnconfigure(0, weight=1)
-        
-        # Folder Sorter Actions
-        btn_sorter = ctk.CTkButton(card, text="📦 製造完了（仕分け実行）", height=50, font=("Arial", 14, "bold"), fg_color="#1976D2", hover_color="#1565C0", command=self.run_folder_sorter_manufacture)
-        btn_sorter.grid(row=0, column=0, padx=20, pady=20, sticky="ew")
-        
-        btn_cleanup = ctk.CTkButton(card, text="🚀 投稿完了（片付け実行）", height=50, font=("Arial", 14, "bold"), fg_color="#388E3C", hover_color="#2E7D32", command=self.run_folder_sorter_upload)
-        btn_cleanup.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
-        
-        note = "※ D:\\sticker-porter\\folder_sorter.py の設定に従って自動仕分けを行います。"
-        ctk.CTkLabel(page, text=note, font=("Arial", 11), text_color="gray").grid(row=3, column=0, padx=20, pady=10, sticky="w")
+        # --- Folder Cards Section ---
+        cards_frame = ctk.CTkFrame(page, fg_color="transparent")
+        cards_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+        for i in range(4): cards_frame.grid_columnconfigure(i, weight=1)
 
-        btn_launch = ctk.CTkButton(page, text="Folder Sorter GUIを直接開く", width=200, command=lambda: self.launch_external_tool("folder_sorter"))
-        btn_launch.grid(row=4, column=0, padx=20, pady=20, sticky="w")
+        self.folder_size_labels = {}
+        self.folder_status_bars = {}
+
+        def create_folder_card(parent, title, key, path_func, col):
+            card = ctk.CTkFrame(parent, corner_radius=15, border_width=1, border_color=("gray80", "gray30"))
+            card.grid(row=0, column=col, padx=10, pady=10, sticky="nsew")
+            card.grid_columnconfigure(0, weight=1)
+            
+            # Icon & Title
+            ctk.CTkLabel(card, text=title, font=("Arial", 13, "bold")).grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
+            
+            # Big Capacity Text
+            size_label = ctk.CTkLabel(card, text="-- MB", font=("Arial", 20, "bold"), text_color=LINE_GREEN)
+            size_label.grid(row=1, column=0, padx=15, pady=0, sticky="w")
+            self.folder_size_labels[key] = size_label
+            
+            # Tiny Status Bar (Visualization)
+            bar_bg = ctk.CTkFrame(card, height=4, fg_color=("gray90", "gray20"), corner_radius=2)
+            bar_bg.grid(row=2, column=0, padx=15, pady=(5, 15), sticky="ew")
+            
+            bar_fill = ctk.CTkFrame(bar_bg, height=4, width=0, fg_color=LINE_GREEN, corner_radius=2)
+            bar_fill.place(x=0, y=0)
+            self.folder_status_bars[key] = bar_fill
+            
+            # Open Button
+            btn = ctk.CTkButton(card, text="フォルダを開く", height=28, font=("Arial", 11), fg_color=("gray85", "gray25"), text_color=("gray10", "gray90"), hover_color=("gray75", "gray35"), command=lambda: self._open_folder(path_func()))
+            btn.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="ew")
+
+        # Create 4 Cards
+        create_folder_card(cards_frame, "作業場 (WorkBench)", "workbench", lambda: self.config_mgr.get_path("workspace_dir"), 0)
+        create_folder_card(cards_frame, "投稿待ち (Ready)", "ready", lambda: os.path.join(project_root, "assets", "export", "ready"), 1)
+        create_folder_card(cards_frame, "投稿済み (Archive)", "archive_zip", lambda: os.path.join(project_root, "assets", "export", "archived_zips"), 2)
+        create_folder_card(cards_frame, "履歴 (Raw Archives)", "archive_raw", lambda: os.path.join(project_root, "assets", "export", "raw_archives"), 3)
+
+        # --- Action Section ---
+        action_frame = ctk.CTkFrame(page, fg_color="transparent")
+        action_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        action_frame.grid_columnconfigure(0, weight=1)
+        action_frame.grid_columnconfigure(1, weight=1)
+
+        # Panel 1: Complete Session
+        panel1 = ctk.CTkFrame(action_frame, corner_radius=10)
+        panel1.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+        ctk.CTkLabel(panel1, text="STEP 1: 製造完了", font=("Arial", 14, "bold")).pack(padx=20, pady=(15, 5), anchor="w")
+        ctk.CTkLabel(panel1, text="WorkBenchから投稿待ちへ移動", font=("Arial", 11), text_color="gray").pack(padx=20, pady=(0, 15), anchor="w")
+        
+        btn_m = ctk.CTkButton(panel1, text="📦 仕分け・パッキング実行", height=45, font=("Arial", 14, "bold"), fg_color="#1976D2", hover_color="#1565C0", command=self.run_folder_sorter_manufacture)
+        btn_m.pack(padx=20, pady=(0, 20), fill="x")
+
+        # Panel 2: Archive All
+        panel2 = ctk.CTkFrame(action_frame, corner_radius=10)
+        panel2.grid(row=0, column=1, padx=(10, 0), pady=0, sticky="nsew")
+        ctk.CTkLabel(panel2, text="STEP 2: 投稿完了", font=("Arial", 14, "bold")).pack(padx=20, pady=(15, 5), anchor="w")
+        ctk.CTkLabel(panel2, text="投稿済みZIPをアーカイブへ移動", font=("Arial", 11), text_color="gray").pack(padx=20, pady=(0, 15), anchor="w")
+        
+        btn_u = ctk.CTkButton(panel2, text="🚀 アーカイブ・片付け実行", height=45, font=("Arial", 14, "bold"), fg_color="#388E3C", hover_color="#2E7D32", command=self.run_folder_sorter_upload)
+        btn_u.pack(padx=20, pady=(0, 20), fill="x")
+
+        # --- Detailed Log ---
+        log_container = ctk.CTkFrame(page, corner_radius=10)
+        log_container.grid(row=3, column=0, padx=20, pady=20, sticky="nsew")
+        page.grid_rowconfigure(3, weight=1)
+        
+        ctk.CTkLabel(log_container, text="📜 システム整理ログ", font=("Arial", 12, "bold")).pack(padx=15, pady=(10, 0), anchor="w")
+        self.manage_log_text = ctk.CTkTextbox(log_container, font=("Consolas", 10), height=200, fg_color=("#F5F5F5", "#1A1A1A"))
+        self.manage_log_text.pack(padx=15, pady=15, fill="both", expand=True)
+        self.manage_log_text.configure(state="disabled")
+
+    def update_folder_sizes(self):
+        """フォルダ容量の表示とバーの長さを更新"""
+        from core.tasks import get_folder_size_formatted
+        
+        paths = {
+            "workbench": self.config_mgr.get_path("workspace_dir"),
+            "ready": os.path.join(project_root, "assets", "export", "ready"),
+            "archive_zip": os.path.join(project_root, "assets", "export", "archived_zips"),
+            "archive_raw": os.path.join(project_root, "assets", "export", "raw_archives")
+        }
+        
+        for key, path in paths.items():
+            if key in self.folder_size_labels:
+                formatted, raw, unit = get_folder_size_formatted(path)
+                
+                # Update Text & Color
+                color = LINE_GREEN
+                if unit == "GB":
+                    if raw >= 1: color = "#FF8C00" # Orange
+                    if raw >= 5: color = "#FF4500" # Red
+                
+                self.folder_size_labels[key].configure(text=formatted, text_color=color)
+                
+                # Update Status Bar (Max 10GB for visualization)
+                gb_val = raw if unit == "GB" else (raw / 1024.0 if unit == "MB" else 0)
+                fill_width = min(200, int((gb_val / 10.0) * 200)) # 200px is roughly max
+                self.folder_status_bars[key].configure(width=fill_width, fg_color=color)
+
+    def log_to_manage(self, message):
+        """管理タブのログにメッセージを追記"""
+        self.manage_log_text.configure(state="normal")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.manage_log_text.insert("end", f"[{timestamp}] {message}\n")
+        self.manage_log_text.see("end")
+        self.manage_log_text.configure(state="disabled")
+
+    def notify(self, message):
+        """画面下の通知バーにメッセージを表示"""
+        self.status_label_common.configure(text=message, text_color=LINE_GREEN)
+        # 5秒後に元の表示に戻す
+        self.after(5000, lambda: self.status_label_common.configure(text="Ready", text_color=("gray30", "gray70")))
 
     def setup_ai_page(self):
         """AIプロンプトページのUIを構築（AutoPrompter統合）"""
@@ -598,15 +710,17 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             if path.endswith(".py"):
                 cmd = [sys.executable, path]
                 if extra_args: cmd.extend(extra_args)
-                subprocess.Popen(cmd, cwd=work_dir)
+                # 新しいコンソールウィンドウで起動
+                subprocess.Popen(cmd, cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
             elif path.endswith(".bat"):
                 # uploader の場合は main.py を優先して呼ぶ（引数対応のため）
                 script_py = os.path.join(work_dir, "main.py")
                 if os.path.exists(script_py) and tool_key == "uploader":
                     cmd = [sys.executable, script_py]
                     if extra_args: cmd.extend(extra_args)
-                    subprocess.Popen(cmd, cwd=work_dir)
+                    subprocess.Popen(cmd, cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
+                    # batファイル自体を新しいコンソールで実行
                     subprocess.Popen(["cmd", "/c", path], cwd=work_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
                 os.startfile(path)
@@ -614,14 +728,43 @@ class StampMakerGUI(ctk.CTk, TkinterDnD.DnDWrapper):
             print(f"起動失敗: {e}")
 
     def run_folder_sorter_manufacture(self):
-        """Folder Sorterの仕分け機能をバックグラウンドで実行"""
+        """仕分け機能を実行"""
         print("\n[管理] 仕分け処理を開始します...")
-        self.launch_external_tool("folder_sorter") 
+        self.log_to_manage("--- 製造完了（仕分け）開始 ---")
+        
+        workbench = self.config_mgr.get_path("workspace_dir")
+        ready_dir = os.path.join(project_root, "assets", "export", "ready")
+        archive_dir = os.path.join(project_root, "assets", "export", "raw_archives")
+        
+        zip_c, folder_c, logs = organize_workbench(workbench, ready_dir, archive_dir)
+        
+        for log in logs:
+            self.log_to_manage(f"  {log}")
+            
+        result_msg = f"仕分け完了: ZIP {zip_c}件, フォルダ {folder_c}件 を整理しました。"
+        self.log_to_manage(result_msg)
+        self.notify(result_msg)
+        print(f"[管理] {result_msg}")
+        self.update_folder_sizes()
 
     def run_folder_sorter_upload(self):
-        """Folder Sorterの片付け機能をバックグラウンドで実行"""
+        """片付け機能を実行"""
         print("\n[管理] 片付け処理を開始します...")
-        self.launch_external_tool("folder_sorter")
+        self.log_to_manage("--- 投稿完了（片付け）開始 ---")
+        
+        ready_dir = os.path.join(project_root, "assets", "export", "ready")
+        arc_zip_dir = os.path.join(project_root, "assets", "export", "archived_zips")
+        
+        zip_c, logs = archive_uploaded(ready_dir, arc_zip_dir)
+        
+        for log in logs:
+            self.log_to_manage(f"  {log}")
+            
+        result_msg = f"アーカイブ完了: ZIP {zip_c}件 を整理しました。"
+        self.log_to_manage(result_msg)
+        self.notify(result_msg)
+        print(f"[管理] {result_msg}")
+        self.update_folder_sizes()
 
     def _open_folder(self, path):
         """指定したパスをエクスプローラーで開く共通メソッド"""
